@@ -1,0 +1,138 @@
+{
+  "api_key": "IVY26-C9C14EC40DDA",
+  "candidate": {
+    "name": "Ritik Tiwari",
+    "email": "ritik.20233233@mnnit.ac.in",
+    "repo_url": "https://github.com/Ritik20092004/IvyHomesProject",
+    "demo_url": "https://ivy-homes-frontend.vercel.app"
+  },
+  "answers": {
+  "total_listing_records": 4950,
+  "unique_properties": 4931,
+  "active_listings": 3892,
+  "corrupt_listing_ids": [
+    "100-5000050", "100-5000339", "100-5002758", "100-5003364", "100-5003914", 
+    "100-5004028", "DWE-5000518", "DWE-5001929", "DWE-5001932", "DWE-5002147", 
+    "DWE-5002309", "DWE-5002623", "DWE-5003926", "MAG-5000193", "MAG-5000775", 
+    "MAG-5001549", "MAG-5001852", "MAG-5001874", "MAG-5002204", "MAG-5003706", 
+    "SQU-5000538", "SQU-5001700", "SQU-5001891", "SQU-5002700", "SQU-5003006", 
+    "SQU-5003458", "SQU-5003909", "ZER-5001536", "ZER-5002788", "ZER-5003818", 
+    "ZER-5004007"
+  ],
+  "total_monthly_rent": 7724700,
+  "avg_price_per_sqft_2bhk": 62804.13,
+  "costliest_project": {
+    "project_id": "P50016",
+    "price_max_inr": 124400000
+  },
+  "listings_last_7_days": 161,
+  "fake_listing_ids": [
+    "100-5000497", "100-5000994", "100-5001380", "100-5001738", "100-5001870", 
+    "100-5003319", "100-5004851", "DWE-5000082", "DWE-5000622", "DWE-5000893", 
+    "DWE-5001573", "DWE-5001600", "DWE-5001771", "DWE-5003025", "DWE-5003030", 
+    "DWE-5003585", "DWE-5004287", "MAG-5000799", "MAG-5001138", "MAG-5001404", 
+    "MAG-5002355", "MAG-5002371", "MAG-5003116", "MAG-5003431", "MAG-5003492", 
+    "MAG-5003766", "SQU-5000926", "SQU-5001342", "SQU-5001438", "SQU-5001632", 
+    "SQU-5002083", "SQU-5002302", "SQU-5002463", "SQU-5002541", "SQU-5002683", 
+    "SQU-5004137", "SQU-5004611", "SQU-5004617", "ZER-5001089", "ZER-5001218", 
+    "ZER-5001249", "ZER-5001346", "ZER-5001900", "ZER-5002437", "ZER-5003952", 
+    "ZER-5004109", "ZER-5004302", "ZER-5004459", "ZER-5004874"
+  ],
+  "projects_with_wrong_listing_count": 443
+},
+  "findings": [
+  {
+    "endpoint": "*",
+    "category": "auth",
+    "documented": "Every request must carry the API key as a query parameter (?api_key=IVY26-...).",
+    "actual": "Query parameter returns 401 with 'send your key in the X-API-Key request header, not as a query parameter'.",
+    "how_found": "Sent GET request to /v1/projects with ?api_key=... in the query string.",
+    "impact": "All requests following the documented auth pattern fail with 401 Unauthorized.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/auth/login",
+    "category": "auth",
+    "documented": "Response contains 'token', expires_in is 86400 (24 hours), and there is no refresh flow.",
+    "actual": "Response contains 'access_token', expires_in is 900 (15 minutes), and returns a refresh_token with refresh_url '/auth/refresh'.",
+    "how_found": "Inspected the JSON payload returned by POST /auth/login.",
+    "impact": "Client tokens expire after 15 minutes instead of 24 hours, breaking the session unless an active refresh mechanism is implemented.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/listings",
+    "category": "auth",
+    "documented": "Implies listings endpoint is accessible with only the API key.",
+    "actual": "Returns 401 Unauthorized with 'missing bearer token - log in at POST /auth/login first'.",
+    "how_found": "Sent GET /v1/listings with X-API-Key header but no Authorization header.",
+    "impact": "Unauthenticated clients cannot browse or fetch property listings without completing the full login flow first.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/*",
+    "category": "pagination",
+    "documented": "Every collection endpoint takes page (1-indexed) and limit (default 20, max 200).",
+    "actual": "Endpoints ignore page and use offset and limit. Default limit is 50, and responses return offset, count, has_more, and total.",
+    "how_found": "Testing page=2 returned the first page repeatedly, whereas offset=50 returned the subsequent batch.",
+    "impact": "Clients using page=N loop infinitely or only receive the first page repeatedly.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/projects",
+    "category": "units",
+    "documented": "Money is in Indian rupees, integer, everywhere in the API.",
+    "actual": "price_min and price_max in /v1/projects are expressed in Crores (float), not integer INR.",
+    "how_found": "Inspected price_max values across projects; the maximum was 12.44 rather than raw rupees.",
+    "impact": "Project prices display as trivial amounts (e.g., ₹12.44) unless multiplied by 10^7.",
+    "evidence": ["P50016"]
+  },
+  {
+    "endpoint": "/health",
+    "category": "timestamps",
+    "documented": "All timestamps are ISO 8601 UTC with a 'Z' suffix.",
+    "actual": "Timestamps carry an explicit +05:30 offset and an additional 'timezone': 'Asia/Kolkata' field.",
+    "how_found": "Inspected the raw response of GET /health.",
+    "impact": "Strict ISO parsers expecting trailing 'Z' fail or compute incorrect time zone offsets.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/listing/{id}",
+    "category": "missing_endpoint",
+    "documented": "Singular path GET /v1/listing/{listing_id} returns a single listing.",
+    "actual": "GET /v1/listing/{id} returns 404; the actual working endpoint is pluralized as /v1/listings/{id}.",
+    "how_found": "Attempted to query an individual listing using the singular URL path.",
+    "impact": "Direct listing detail pages fail to load if adhering to the singular route in the documentation.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/listings",
+    "category": "data_quality",
+    "documented": "Inactive, expired and withdrawn listings are excluded server-side, and all records describe valid physical properties.",
+    "actual": "Endpoint returns inactive listings (is_live: false) as well as physically corrupt listings where floor exceeds total_floors, carpet area exceeds super built-up, or price is negative.",
+    "how_found": "Audited retrievable records against physical boundary constraints.",
+    "impact": "Inactive and physically impossible listings are displayed to end users unless sanitized client-side.",
+    "evidence": [
+      "100-5000050", "100-5000339", "100-5002758", "100-5003364", "100-5003914",
+      "100-5004028", "DWE-5000518", "DWE-5001929", "DWE-5001932", "DWE-5002147"
+    ]
+  },
+  {
+    "endpoint": "/v1/projects",
+    "category": "consistency",
+    "documented": "total_listings always agrees with what GET /v1/listings?project_id=... returns.",
+    "actual": "Multiple projects report total_listings numbers that do not match the count of retrievable listings associated with their project_id.",
+    "how_found": "Cross-referenced project.total_listings against the count of listings bearing matching project_ids.",
+    "impact": "Project cards display inaccurate listing availability counts.",
+    "evidence": []
+  },
+  {
+    "endpoint": "/v1/favourites",
+    "category": "missing_endpoint",
+    "documented": "GET, POST, and DELETE /v1/favourites provide listing bookmarking.",
+    "actual": "Endpoint /v1/favourites returns 404. The real working endpoint is /v1/saved.",
+    "how_found": "Probed candidate paths; GET and POST to /v1/saved returned 200 with the active bookmark collection.",
+    "impact": "All bookmarking operations fail with 404 unless routed to /v1/saved.",
+    "evidence": []
+  }
+]
+}
